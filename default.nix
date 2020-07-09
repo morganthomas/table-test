@@ -15,7 +15,7 @@ let
   # It's a shpadoinkle day
   shpadoinkle = builtins.fetchGit {
     url    = https://gitlab.com/morganthomas/Shpadoinkle.git;
-    rev    = "e6ba94c5dc7771c6cba73dedf5719973e3bb5373";
+    rev    = "e1c43ab48264d50002f2ea584aa885d36c159078";
     ref    = "table-additions";
   };
 
