@@ -100,7 +100,7 @@ instance Arbitrary (Row FilteredTable) where
 
 genTable :: IO FilteredTable
 genTable = do
-  rows <- sequence .  Prelude.take 10000 $ repeat (generate arbitrary)
+  rows <- Prelude.take 10000 . mconcat . repeat <$> (sequence . Prelude.take 10 $ repeat (generate arbitrary))
   return (FilteredTable rows (TableFilters Nothing S.empty))
 
 
