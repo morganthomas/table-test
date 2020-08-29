@@ -8,15 +8,16 @@
 , strictDeps ? false
 , isJS ? false
 , asShell ? false
+, localShpadoinkle ? false
 }:
 let
 
 
   # It's a shpadoinkle day
-  shpadoinkle = builtins.fetchGit {
+  shpadoinkle = if localShpadoinkle then ../Shpadoinkle else builtins.fetchGit {
     url    = https://gitlab.com/morganthomas/Shpadoinkle.git;
-    rev    = "e1c43ab48264d50002f2ea584aa885d36c159078";
-    ref    = "table-additions";
+    rev    = "f167766c0a3c53f5bee421934c1611e6ae2844d4";
+    ref    = "lazy-table";
   };
 
 

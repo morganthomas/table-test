@@ -1,26 +1,38 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE ExtendedDefaultRules #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NoImplicitPrelude    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE ViewPatterns         #-}
 
 
 module Main where
 
 
+import           Prelude hiding (div, span)
+
+import           Control.Arrow (first)
 import           Data.CountryCodes
 import           Data.Proxy
 import           Data.Set ( Set )
 import qualified Data.Set as S
-import           Data.Text hiding (span)
-import           Prelude hiding (span)
+import           Data.Text hiding (span, take)
+import           Language.Javascript.JSaddle
 import           Shpadoinkle hiding (name)
 import           Shpadoinkle.Backend.ParDiff
 import           Shpadoinkle.Html
 import           Shpadoinkle.Widgets.Types.Core
 import           Shpadoinkle.Widgets.Table
+import           Shpadoinkle.Widgets.LazyTable
 import           StockName
 import           Test.QuickCheck
+
+default (Text)
+
+
+nRows :: Int
+nRows = 100000
 
 
 data Sex = Male | Female
@@ -43,6 +55,7 @@ data TableFilters = TableFilters
 
 data FilteredTable = FilteredTable
                    { contents :: [Person]
+                   , showUpTo :: Int
                    , filters  :: TableFilters }
   deriving (Eq, Show)
 
@@ -61,7 +74,7 @@ instance Humanize (Column FilteredTable) where
 instance Tabular FilteredTable where
   type Effect FilteredTable m = Monad m
 
-  toRows = fmap PersonRow . contents
+  toRows xs = take (showUpTo xs) $ PersonRow <$> contents xs
 
   toFilter (filters -> TableFilters {..}) (unRow -> p) = sexFilter && countryFilter
     where sexFilter = case bySex of
@@ -82,6 +95,10 @@ instance Tabular FilteredTable where
   toCell tab (unRow -> p) Origin = [text (toName (origin p))]
 
 
+instance LazyTabular FilteredTable where
+  countRows _ = nRows
+
+
 instance Arbitrary Sex where
   arbitrary = oneof [return Male, return Female]
 
@@ -100,8 +117,8 @@ instance Arbitrary (Row FilteredTable) where
 
 genTable :: IO FilteredTable
 genTable = do
-  rows <- sequence .  Prelude.take 10000 $ repeat (generate arbitrary)
-  return (FilteredTable rows (TableFilters Nothing S.empty))
+  rows <- sequence .  Prelude.take nRows $ repeat (generate arbitrary)
+  return (FilteredTable rows nRows (TableFilters Nothing S.empty))
 
 
 type Model = (FilteredTable, SortCol FilteredTable)
@@ -144,15 +161,19 @@ filterView m =
            , sc )
 
 
-mainView :: Monad m => Model -> HtmlM m Model
-mainView m = div_ [
-    filterView m,
-    uncurry (view Proxy) m
+mainView :: MonadJSM m => DebounceScroll m Model -> (Model, CurrentScrollY) -> HtmlM m (Model, CurrentScrollY)
+mainView ts (m@(tab, sc), sy) = div_ [
+    liftMC (first . const) fst $ filterView m,
+    lazyTable Proxy mempty (AssumedTableHeight 500) (AssumedRowHeight 20) ts container tab sc sy
   ]
+  where
+    container :: Monad m => HtmlM m a -> HtmlM m a
+    container = div [("style", "overflow: auto; max-height: 500px")] . (:[])
 
 
 main :: IO ()
 main = do
   tab <- genTable
+  ts  <- debounceRaw 0.1
   runJSorWarp 8080 $
-    simple runParDiff (tab, SortCol Name ASC) mainView getBody
+    simple Proxy runParDiff ((tab, SortCol Name ASC), CurrentScrollY 0) (mainView ts) getBody
