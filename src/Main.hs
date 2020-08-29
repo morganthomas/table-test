@@ -24,7 +24,7 @@ import           Shpadoinkle.Backend.ParDiff
 import           Shpadoinkle.Html
 import           Shpadoinkle.Widgets.Types.Core
 import           Shpadoinkle.Widgets.Table
-import           Shpadoinkle.Widgets.LazyTable
+import           Shpadoinkle.Widgets.Table.Lazy
 import           StockName
 import           Test.QuickCheck
 
@@ -174,6 +174,6 @@ mainView ts (m@(tab, sc), sy) = div_ [
 main :: IO ()
 main = do
   tab <- genTable
-  ts  <- debounceRaw 0.1
+  ts  <- debounceRaw 0.25
   runJSorWarp 8080 $
     simple Proxy runParDiff ((tab, SortCol Name ASC), CurrentScrollY 0) (mainView ts) getBody
