@@ -13,15 +13,18 @@ module Main where
 import           Prelude hiding (div, span)
 
 import           Control.Arrow (first)
+import           Control.Monad (forM_)
 import           Data.CountryCodes
 import           Data.Proxy
 import           Data.Set ( Set )
 import qualified Data.Set as S
-import           Data.Text hiding (span, take)
+import           Data.Time.Clock
+import           Data.Text hiding (concat, span, take, head, foldl, tail)
+import           GHC.Conc hiding (newTVarIO)
 import           Language.Javascript.JSaddle
 import           Shpadoinkle hiding (name)
 import           Shpadoinkle.Backend.ParDiff
-import           Shpadoinkle.Html
+import           Shpadoinkle.Html hiding (head, max)
 import           Shpadoinkle.Widgets.Types.Core
 import           Shpadoinkle.Widgets.Table
 import           Shpadoinkle.Widgets.Table.Lazy
@@ -31,8 +34,12 @@ import           Test.QuickCheck
 default (Text)
 
 
-nRows :: Int
-nRows = 100000
+nRows :: [Int]
+nRows = [100, 1000, 10000]
+
+
+stageDelay :: NominalDiffTime
+stageDelay = 1
 
 
 data Sex = Male | Female
@@ -55,7 +62,6 @@ data TableFilters = TableFilters
 
 data FilteredTable = FilteredTable
                    { contents :: [Person]
-                   , showUpTo :: Int
                    , filters  :: TableFilters }
   deriving (Eq, Show)
 
@@ -74,7 +80,7 @@ instance Humanize (Column FilteredTable) where
 instance Tabular FilteredTable where
   type Effect FilteredTable m = Monad m
 
-  toRows xs = take (showUpTo xs) $ PersonRow <$> contents xs
+  toRows xs = PersonRow <$> contents xs
 
   toFilter (filters -> TableFilters {..}) (unRow -> p) = sexFilter && countryFilter
     where sexFilter = case bySex of
@@ -96,7 +102,7 @@ instance Tabular FilteredTable where
 
 
 instance LazyTabular FilteredTable where
-  countRows _ = nRows
+  countRows _ = 10000
 
 
 instance Arbitrary Sex where
@@ -115,10 +121,8 @@ instance Arbitrary (Row FilteredTable) where
   arbitrary = PersonRow <$> arbitrary
 
 
-genTable :: IO FilteredTable
-genTable = do
-  rows <- sequence .  Prelude.take nRows $ repeat (generate arbitrary)
-  return (FilteredTable rows nRows (TableFilters Nothing S.empty))
+genRows :: Int -> IO [Person]
+genRows n = sequence .  Prelude.take n $ repeat (generate arbitrary)
 
 
 type Model = (FilteredTable, SortCol FilteredTable)
@@ -173,7 +177,15 @@ mainView ts (m@(tab, sc), sy) = div_ [
 
 main :: IO ()
 main = do
-  tab <- genTable
-  ts  <- debounceRaw 0.25
+  rs <- genRows (foldl max 0 nRows)
+  ts <- debounceRaw 0.25
+  let init = ((FilteredTable rs (TableFilters Nothing S.empty), SortCol Name ASC), CurrentScrollY 0)
+  model <- newTVarIO init
+  _ <- forkIO . forM_ (tail nRows) $ \n -> do
+    threadDelay 1000000
+    atomically $ do
+      ((tab, sc), sy) <- readTVar model
+      let tab' = tab { contents = take n rs }
+      writeTVar model ((tab', sc), sy)
   runJSorWarp 8080 $
-    simple Proxy runParDiff ((tab, SortCol Name ASC), CurrentScrollY 0) (mainView ts) getBody
+    shpadoinkle Proxy id runParDiff init model (mainView ts) getBody
