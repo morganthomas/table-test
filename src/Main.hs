@@ -1,26 +1,46 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE ExtendedDefaultRules #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NoImplicitPrelude    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE ViewPatterns         #-}
 
 
 module Main where
 
 
+import           Prelude hiding (div, span)
+
+import           Control.Arrow (first)
+import           Control.Monad (forM_)
 import           Data.CountryCodes
 import           Data.Proxy
 import           Data.Set ( Set )
 import qualified Data.Set as S
-import           Data.Text hiding (span)
-import           Prelude hiding (span)
+import           Data.Time.Clock
+import           Data.Text hiding (concat, span, take, head, foldl, tail)
+import           GHC.Conc hiding (newTVarIO)
+import           Language.Javascript.JSaddle
 import           Shpadoinkle hiding (name)
 import           Shpadoinkle.Backend.ParDiff
-import           Shpadoinkle.Html
+import           Shpadoinkle.Html hiding (head, max)
 import           Shpadoinkle.Widgets.Types.Core
 import           Shpadoinkle.Widgets.Table
+import           Shpadoinkle.Widgets.Table.Lazy
 import           StockName
 import           Test.QuickCheck
+
+default (Text)
+
+
+nRows :: [Int]
+nRows = [100, 1000, 10000]
+
+
+stageDelay :: NominalDiffTime
+stageDelay = 1
 
 
 data Sex = Male | Female
@@ -61,7 +81,7 @@ instance Humanize (Column FilteredTable) where
 instance Tabular FilteredTable where
   type Effect FilteredTable m = Monad m
 
-  toRows = fmap PersonRow . contents
+  toRows xs = PersonRow <$> contents xs
 
   toFilter (filters -> TableFilters {..}) (unRow -> p) = sexFilter && countryFilter
     where sexFilter = case bySex of
@@ -82,6 +102,10 @@ instance Tabular FilteredTable where
   toCell tab (unRow -> p) Origin = [text (toName (origin p))]
 
 
+instance LazyTabular FilteredTable where
+  countRows _ = 10000
+
+
 instance Arbitrary Sex where
   arbitrary = oneof [return Male, return Female]
 
@@ -98,10 +122,8 @@ instance Arbitrary (Row FilteredTable) where
   arbitrary = PersonRow <$> arbitrary
 
 
-genTable :: IO FilteredTable
-genTable = do
-  rows <- Prelude.take 10000 . mconcat . repeat <$> (sequence . Prelude.take 10 $ repeat (generate arbitrary))
-  return (FilteredTable rows (TableFilters Nothing S.empty))
+genRows :: Int -> IO [Person]
+genRows n = sequence .  Prelude.take n $ repeat (generate arbitrary)
 
 
 type Model = (FilteredTable, SortCol FilteredTable)
@@ -144,15 +166,32 @@ filterView m =
            , sc )
 
 
-mainView :: Monad m => Model -> HtmlM m Model
-mainView m = div_ [
-    filterView m,
-    uncurry (view Proxy) m
+mainView :: MonadJSM m => DebounceScroll m (LazyTable FilteredTable, SortCol (LazyTable FilteredTable))
+         -> (Model, CurrentScrollY) -> HtmlM m (Model, CurrentScrollY)
+mainView debounceScroll (m@(tab, sc), sy) = div_ [
+    liftMC (first . const) fst $ filterView m,
+    lazyTable theme (AssumedTableHeight 500) (AssumedRowHeight 20) (TbodyIsScrollable debounceScroll) id tab sc sy
   ]
+  where
+    theme :: Theme m FilteredTable
+    theme = mempty { bodyProps = const $ const [("style", "display: block; overflow: auto; height: 500px;")]
+                   , headProps = const $ const [("style", "display: block;")] }
+
+    container :: Monad m => HtmlM m a -> HtmlM m a
+    container = div [("style", "max-height: 500px")] . (:[])
 
 
 main :: IO ()
 main = do
-  tab <- genTable
+  rs <- genRows (foldl max 0 nRows)
+  ts <- debounceRaw 0.25
+  let init = ((FilteredTable rs (TableFilters Nothing S.empty), SortCol Name ASC), CurrentScrollY 0)
+  model <- newTVarIO init
+  _ <- forkIO . forM_ (tail nRows) $ \n -> do
+    threadDelay 1000000
+    atomically $ do
+      ((tab, sc), sy) <- readTVar model
+      let tab' = tab { contents = take n rs }
+      writeTVar model ((tab', sc), sy)
   runJSorWarp 8080 $
-    simple runParDiff (tab, SortCol Name ASC) mainView getBody
+    shpadoinkle Proxy id runParDiff init model (mainView ts) getBody
