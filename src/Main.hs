@@ -166,15 +166,19 @@ filterView m =
            , sc )
 
 
-mainView :: MonadJSM m => DebounceScroll m (Model, CurrentScrollY)
+mainView :: MonadJSM m => DebounceScroll m (LazyTable FilteredTable, SortCol (LazyTable FilteredTable))
          -> (Model, CurrentScrollY) -> HtmlM m (Model, CurrentScrollY)
 mainView debounceScroll (m@(tab, sc), sy) = div_ [
     liftMC (first . const) fst $ filterView m,
-    lazyTable mempty (AssumedTableHeight 500) (AssumedRowHeight 20) (ContainerIsScrollable debounceScroll) container tab sc sy
+    lazyTable theme (AssumedTableHeight 500) (AssumedRowHeight 20) (TbodyIsScrollable debounceScroll) id tab sc sy
   ]
   where
+    theme :: Theme m FilteredTable
+    theme = mempty { bodyProps = const $ const [("style", "display: block; overflow: auto; height: 500px;")]
+                   , headProps = const $ const [("style", "display: block;")] }
+
     container :: Monad m => HtmlM m a -> HtmlM m a
-    container = div [("style", "overflow: auto; max-height: 500px")] . (:[])
+    container = div [("style", "max-height: 500px")] . (:[])
 
 
 main :: IO ()

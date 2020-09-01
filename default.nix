@@ -16,7 +16,7 @@ let
   # It's a shpadoinkle day
   shpadoinkle = if localShpadoinkle then ../Shpadoinkle else builtins.fetchGit {
     url    = https://gitlab.com/morganthomas/Shpadoinkle.git;
-    rev    = "e661c320fd925263dfc54ba9a5787a21dcb26ce6";
+    rev    = "a572f8effa0a2b9602abaaf15a024a53d7c8d465";
     ref    = "develop";
   };
 
