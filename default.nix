@@ -16,8 +16,8 @@ let
   # It's a shpadoinkle day
   shpadoinkle = if localShpadoinkle then ../Shpadoinkle else builtins.fetchGit {
     url    = https://gitlab.com/morganthomas/Shpadoinkle.git;
-    rev    = "670b2131e9029ac58a9951d5a56b92afd2f2f538";
-    ref    = "lazy-table";
+    rev    = "e661c320fd925263dfc54ba9a5787a21dcb26ce6";
+    ref    = "develop";
   };
 
 

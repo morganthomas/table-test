@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NoImplicitPrelude    #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE ViewPatterns         #-}
@@ -165,10 +166,11 @@ filterView m =
            , sc )
 
 
-mainView :: MonadJSM m => DebounceScroll m Model -> (Model, CurrentScrollY) -> HtmlM m (Model, CurrentScrollY)
-mainView ts (m@(tab, sc), sy) = div_ [
+mainView :: MonadJSM m => DebounceScroll m (Model, CurrentScrollY)
+         -> (Model, CurrentScrollY) -> HtmlM m (Model, CurrentScrollY)
+mainView debounceScroll (m@(tab, sc), sy) = div_ [
     liftMC (first . const) fst $ filterView m,
-    lazyTable Proxy mempty (AssumedTableHeight 500) (AssumedRowHeight 20) ts container tab sc sy
+    lazyTable mempty (AssumedTableHeight 500) (AssumedRowHeight 20) (ContainerIsScrollable debounceScroll) container tab sc sy
   ]
   where
     container :: Monad m => HtmlM m a -> HtmlM m a
