@@ -1,5 +1,5 @@
-{ chan ? "e1843646b04fb564abf6330a9432a76df3269d2f"
-, compiler ? "ghc864"
+{ chan ? "5272327b81ed355bbed5659b8d303cf2979b6953"
+, compiler ? "ghc865"
 , withHoogle ? false
 , doHoogle ? false
 , doHaddock ? false
@@ -15,9 +15,9 @@ let
 
   # It's a shpadoinkle day
   shpadoinkle = if localShpadoinkle then ../Shpadoinkle else builtins.fetchGit {
-    url    = https://gitlab.com/morganthomas/Shpadoinkle.git;
-    rev    = "a572f8effa0a2b9602abaaf15a024a53d7c8d465";
-    ref    = "develop";
+    url    = https://gitlab.com/fresheyeball/Shpadoinkle.git;
+    rev    = "2cf6850dc0e3c2a70ac720949ce8dcb098ac83da";
+    ref    = "master";
   };
 
 
@@ -32,7 +32,7 @@ let
 
 
   # Get some utilities
-  inherit (import (shpadoinkle + "/nix/util.nix") { inherit compiler isJS; }) compilerjs gitignore;
+  inherit (import (shpadoinkle + "/nix/util.nix") { inherit compiler isJS pkgs; }) compilerjs gitignore;
 
 
   # Build faster by doing less
@@ -46,7 +46,7 @@ let
   # Overlay containing Shpadoinkle packages, and needed alterations for those packages
   # as well as optimizations from Reflex Platform
   shpadoinkle-overlay =
-    import (shpadoinkle + "/nix/overlay.nix") { inherit compiler isJS; };
+    import (shpadoinkle + "/nix/overlay.nix") { inherit compiler isJS chan; };
 
 
   # Haskell specific overlay (for you to extend)
@@ -88,7 +88,7 @@ in with pkgs; with lib; with haskell.packages.${compiler};
     inherit withHoogle;
     packages = _: [snowman];
     COMPILER = compilerjs;
-    buildInputs = [ stylish-haskell cabal-install ghcid ];
+    buildInputs = [ cabal-install ghcid ];
     shellHook = ''
       ${lolcat}/bin/lolcat ${./figlet}
     '';

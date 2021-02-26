@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NoImplicitPrelude    #-}
@@ -21,11 +22,13 @@ import           Data.Set ( Set )
 import qualified Data.Set as S
 import           Data.Time.Clock
 import           Data.Text hiding (concat, span, take, head, foldl, tail)
-import           GHC.Conc hiding (newTVarIO)
-import           Language.Javascript.JSaddle
+import           GHC.Conc hiding (newTVarIO, atomically)
+import           GHC.Generics (Generic)
+import           Language.Javascript.JSaddle hiding (MonadJSM)
 import           Shpadoinkle hiding (name)
 import           Shpadoinkle.Backend.ParDiff
 import           Shpadoinkle.Html hiding (head, max)
+import           Shpadoinkle.Run (runJSorWarp)
 import           Shpadoinkle.Widgets.Types.Core
 import           Shpadoinkle.Widgets.Table
 import           Shpadoinkle.Widgets.Table.Lazy
@@ -36,7 +39,7 @@ default (Text)
 
 
 nRows :: [Int]
-nRows = [100, 1000, 10000]
+nRows = [10000]
 
 
 stageDelay :: NominalDiffTime
@@ -44,7 +47,9 @@ stageDelay = 1
 
 
 data Sex = Male | Female
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance NFData Sex
 
 
 data Person = Person
@@ -52,27 +57,37 @@ data Person = Person
             , age    :: Int
             , sex    :: Sex
             , origin :: CountryCode }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance NFData Person
 
 
 data TableFilters = TableFilters
                   { bySex :: Maybe Sex
                   , byOrigin :: Set CountryCode }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance NFData TableFilters
 
 
 data FilteredTable = FilteredTable
                    { contents :: [Person]
                    , filters  :: TableFilters }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance NFData FilteredTable
 
 
 data instance Row FilteredTable = PersonRow { unRow :: Person }
+  deriving Generic
+
+instance NFData (Row FilteredTable)
 
 
 data instance Column FilteredTable = Name | Age | Sex | Origin
-  deriving (Eq, Ord, Show, Bounded, Enum)
+  deriving (Eq, Ord, Show, Bounded, Enum, Generic)
 
+instance NFData (Column FilteredTable)
 
 instance Humanize (Column FilteredTable) where
   humanize = humanize . show
@@ -129,16 +144,16 @@ genRows n = sequence .  Prelude.take n $ repeat (generate arbitrary)
 type Model = (FilteredTable, SortCol FilteredTable)
 
 
-filterView :: Monad m => Model -> HtmlM m Model
+filterView :: Monad m => Model -> Html m Model
 filterView m =
   div_ [
     div_ [
       text "Filter by sex: ",
-      span [ onClickE (pur (setSexFilter (Just Male))) ] [ "Male" ],
+      span [ onClickC (pur (setSexFilter (Just Male))) ] [ "Male" ],
       text " / ",
-      span [ onClickE (pur (setSexFilter (Just Female))) ] [ "Female" ],
+      span [ onClickC (pur (setSexFilter (Just Female))) ] [ "Female" ],
       text " / ",
-      span [ onClickE (pur (setSexFilter Nothing)) ] [ "Either" ]
+      span [ onClickC (pur (setSexFilter Nothing)) ] [ "Either" ]
     ],
     div_ [
       text "Filter by country of origin:",
@@ -150,11 +165,11 @@ filterView m =
     setSexFilter :: Maybe Sex -> Model -> Model
     setSexFilter f (tab, sc) = (tab { filters = (filters tab) { bySex = f } }, sc)
 
-    originWidget :: Monad m => Model -> (CountryCode, Text) -> HtmlM m Model
+    originWidget :: Monad m => Model -> (CountryCode, Text) -> Html m Model
     originWidget (tab, sc) (cc, cName) = div_ [
       input' [ ("type", "checkbox")
              , checked $ S.member cc (byOrigin (filters tab))
-             , onClickE (pur (toggleOriginFilter cc)) ],
+             , onClickC (pur (toggleOriginFilter cc)) ],
       text cName ]
 
     toggleOriginFilter :: CountryCode -> Model -> Model
@@ -167,9 +182,9 @@ filterView m =
 
 
 mainView :: MonadJSM m => DebounceScroll m (LazyTable FilteredTable, SortCol (LazyTable FilteredTable))
-         -> (Model, CurrentScrollY) -> HtmlM m (Model, CurrentScrollY)
+         -> (Model, CurrentScrollY) -> Html m (Model, CurrentScrollY)
 mainView debounceScroll (m@(tab, sc), sy) = div_ [
-    liftMC (first . const) fst $ filterView m,
+    liftC (first . const) fst $ filterView m,
     lazyTable theme (AssumedTableHeight 500) (AssumedRowHeight 20) (TbodyIsScrollable debounceScroll) id tab sc sy
   ]
   where
@@ -177,7 +192,7 @@ mainView debounceScroll (m@(tab, sc), sy) = div_ [
     theme = mempty { bodyProps = const $ const [("style", "display: block; overflow: auto; height: 500px;")]
                    , headProps = const $ const [("style", "display: block;")] }
 
-    container :: Monad m => HtmlM m a -> HtmlM m a
+    container :: Monad m => Html m a -> Html m a
     container = div [("style", "max-height: 500px")] . (:[])
 
 
@@ -188,10 +203,10 @@ main = do
   let init = ((FilteredTable rs (TableFilters Nothing S.empty), SortCol Name ASC), CurrentScrollY 0)
   model <- newTVarIO init
   _ <- forkIO . forM_ (tail nRows) $ \n -> do
-    threadDelay 1000000
+    --threadDelay 1000000
     atomically $ do
       ((tab, sc), sy) <- readTVar model
       let tab' = tab { contents = take n rs }
       writeTVar model ((tab', sc), sy)
   runJSorWarp 8080 $
-    shpadoinkle Proxy id runParDiff init model (mainView ts) getBody
+    shpadoinkle id runParDiff init model (mainView ts) getBody
