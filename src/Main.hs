@@ -31,6 +31,7 @@ import           Shpadoinkle.Html hiding (head, max)
 import           Shpadoinkle.Run (runJSorWarp)
 import           Shpadoinkle.Widgets.Types.Core
 import           Shpadoinkle.Widgets.Table
+import qualified Shpadoinkle.Widgets.Table as Table
 import           Shpadoinkle.Widgets.Table.Lazy
 import           StockName
 import           Test.QuickCheck
@@ -181,11 +182,11 @@ filterView m =
            , sc )
 
 
-mainView :: MonadJSM m => DebounceScroll m (LazyTable FilteredTable, SortCol (LazyTable FilteredTable))
-         -> (Model, CurrentScrollY) -> Html m (Model, CurrentScrollY)
-mainView debounceScroll (m@(tab, sc), sy) = div_ [
-    liftC (first . const) fst $ filterView m,
-    lazyTable theme (AssumedTableHeight 500) (AssumedRowHeight 20) (TbodyIsScrollable debounceScroll) id tab sc sy
+mainView :: MonadJSM m => 
+            (FilteredTable, SortCol FilteredTable) -> Html m (FilteredTable, SortCol FilteredTable)
+mainView m@(tab, sc) = div_ [
+    filterView m,
+    Table.viewWith theme tab sc
   ]
   where
     theme :: Theme m FilteredTable
@@ -199,14 +200,13 @@ mainView debounceScroll (m@(tab, sc), sy) = div_ [
 main :: IO ()
 main = do
   rs <- genRows (foldl max 0 nRows)
-  ts <- debounceRaw 0.25
-  let init = ((FilteredTable rs (TableFilters Nothing S.empty), SortCol Name ASC), CurrentScrollY 0)
+  let init = (FilteredTable rs (TableFilters Nothing S.empty), SortCol Name ASC)
   model <- newTVarIO init
   _ <- forkIO . forM_ (tail nRows) $ \n -> do
     --threadDelay 1000000
     atomically $ do
-      ((tab, sc), sy) <- readTVar model
+      (tab, sc) <- readTVar model
       let tab' = tab { contents = take n rs }
-      writeTVar model ((tab', sc), sy)
+      writeTVar model (tab', sc)
   runJSorWarp 8080 $
-    shpadoinkle id runParDiff init model (mainView ts) getBody
+    shpadoinkle id runParDiff init model (mainView) getBody
