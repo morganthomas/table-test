@@ -209,4 +209,4 @@ main = do
       let tab' = tab { contents = take n rs }
       writeTVar model ((tab', sc), sy)
   runJSorWarp 8080 $
-    shpadoinkle id runParDiff init model (mainView ts) getBody
+    shpadoinkle id runParDiff model (mainView ts) getBody
